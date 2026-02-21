@@ -2,49 +2,99 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics.pairwise import cosine_similarity
 
+# -------------------------
 # Load dataset
+# -------------------------
 df = pd.read_csv("data/places.csv")
 
-# Select required columns
-df = df[['name', 'listed_in(type)', 'rate', 'votes', 'approx_cost(for two people)']]
+# Keep required columns
+df = df[
+    [
+        "place_name",
+        "area",
+        "category",
+        "rating",
+        "review_count",
+        "avg_cost",
+        "crowd_level",
+        "best_time",
+        "open_now"
+    ]
+]
 
-# Rename columns
-df.columns = ['Place', 'Category', 'Rating', 'Popularity', 'Avg_Cost']
+# Rename internally
+df.columns = [
+    "Place",
+    "Area",
+    "Category",
+    "Rating",
+    "Popularity",
+    "Avg_Cost",
+    "Crowd",
+    "Best_Time",
+    "Open_Now"
+]
 
-# Clean Rating (e.g., '4.1/5' -> 4.1)
-df['Rating'] = df['Rating'].astype(str).str.replace('/5', '', regex=False)
-df['Rating'] = pd.to_numeric(df['Rating'], errors='coerce')
+# -------------------------
+# Cleaning & Encoding
+# -------------------------
+df["Rating"] = pd.to_numeric(df["Rating"], errors="coerce")
+df["Popularity"] = pd.to_numeric(df["Popularity"], errors="coerce")
+df["Avg_Cost"] = pd.to_numeric(df["Avg_Cost"], errors="coerce")
 
-# Clean Cost
-df['Avg_Cost'] = pd.to_numeric(df['Avg_Cost'], errors='coerce')
+crowd_map = {"Low": 1, "Medium": 2, "High": 3}
+df["Crowd"] = df["Crowd"].map(crowd_map)
 
-# Fill missing values
-df.fillna({
-    'Rating': df['Rating'].mean(),
-    'Avg_Cost': df['Avg_Cost'].median(),
-    'Popularity': 0
-}, inplace=True)
+open_map = {"Yes": 1, "No": 0}
+df["Open_Now"] = df["Open_Now"].map(open_map)
 
-# One-hot encode category
-df_encoded = pd.get_dummies(df, columns=['Category'])
-
-# Scale features
-scaler = MinMaxScaler()
-scaled_features = scaler.fit_transform(
-    df_encoded.drop('Place', axis=1)
+df.fillna(
+    {
+        "Rating": df["Rating"].mean(),
+        "Popularity": df["Popularity"].median(),
+        "Avg_Cost": df["Avg_Cost"].median(),
+        "Crowd": 2,
+        "Open_Now": 1
+    },
+    inplace=True
 )
 
-# Compute similarity
-# Weight features
-df_encoded['Rating'] *= 2
-df_encoded['Popularity'] *= 1.5
+# -------------------------
+# Feature Engineering
+# -------------------------
+df_encoded = pd.get_dummies(
+    df,
+    columns=["Area", "Category", "Best_Time"],
+    drop_first=True
+)
 
+# Feature weighting
+df_encoded["Rating"] *= 2
+df_encoded["Popularity"] *= 1.5
+
+# -------------------------
+# Scaling
+# -------------------------
+scaler = MinMaxScaler()
+scaled_features = scaler.fit_transform(
+    df_encoded.drop("Place", axis=1)
+)
+
+# -------------------------
+# Similarity Matrix (GLOBAL — IMPORTANT)
+# -------------------------
+similarity_matrix = cosine_similarity(scaled_features)
+
+# -------------------------
+# Recommendation Function
+# -------------------------
 def recommend(place_name, top_n=5):
-    if place_name not in df['Place'].values:
+    if place_name not in df["Place"].values:
         return []
 
-    idx = df[df['Place'] == place_name].index[0]
+    idx = df[df["Place"] == place_name].index[0]
+
     scores = list(enumerate(similarity_matrix[idx]))
     scores = sorted(scores, key=lambda x: x[1], reverse=True)
 
-    return [df.iloc[i[0]]['Place'] for i in scores[1:top_n+1]]
+    return [df.iloc[i[0]]["Place"] for i in scores[1: top_n + 1]]
